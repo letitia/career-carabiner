@@ -1,0 +1,31 @@
+<html>
+
+<head>
+   	<script type="text/javascript" src="../js/jquery-1.4.2.min.js"></script>
+    <script type="text/javascript" src="../js/raphael-min.js"></script>
+<script type="text/javascript">
+
+$(function() {  
+var paper = new Raphael("canvas_container", 300, 150);
+paper.circle(50, 75, 30);
+paper.circle(150, 75, 30);
+
+$("circle").each(function(i) {
+    $(this).attr({fill: '#FFF', stroke: '#000'});
+    $(this).mouseover(function() { 
+        $("#test").append("<p>MouseOver</p>");
+    });
+    $(this).mouseout(function() { 
+        $("#test").append("<p>MouseOut</p>");
+    });
+});
+});
+</script>
+</head>
+
+<body>
+<div id="canvas_container"></div>  
+<div id="test"></div>
+</body>
+
+</html>

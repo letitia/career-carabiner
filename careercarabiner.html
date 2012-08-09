@@ -1,0 +1,418 @@
+
+<!-- Javascript object variables are copied by reference!!!  So can do away with long var names  :) -->
+
+
+<html>
+  <head>
+	<title>CareerCarabiner 1.2</title>
+	<style type="text/css">
+	body {
+		overflow: hidden;
+		font-family: "Helvetica Light", Helvetica;
+	}
+	#tip {
+		font-size: x-small;
+		color: gray;
+		display: none;
+		position : absolute;
+		border : 1px solid gray;
+		background-color : #efefef;
+		padding : 3px;
+		z-index: 1000;
+		max-width: 300px;	   /* set this to create word wrap */
+	}
+	.copyright {
+	  font-size: 0.5em;
+	}
+	img {
+	  float: left;
+	  width: 80px;
+	  padding-right: 10px;
+	}
+	</style>
+	<script type="text/javascript" src="js/raphael-min.js"></script>
+	<script type="text/javascript" src="js/dracula_graffle.js"></script>
+	<script type="text/javascript" src="js/jquery-1.4.2.min.js"></script>
+	<script src="http://cdn.jquerytools.org/1.2.5/jquery.tools.min.js"></script>
+	<script type="text/javascript" src="js/dracula_graph.js"></script>
+	<script type="text/javascript" src="js/dracula_algorithms.js"></script>
+	<script type="text/javascript">
+	var MYAPP = {
+	  industries:{},
+	  educations:{},
+	  INDUSTRY:"",
+	  titleMappings: {
+		  "Analyst Intern": ["Spring Analyst", "Summer Analyst", "Consultant Intern", "Financ Intern"],
+		  "Research Assistant": ["Undergraduate Researcher", "Research Intern", "Curis", "Research Assistant"],
+		  "Instructor": ["Tutor", "Teacher", "Teaching", "Counselor", "Instructor", "Coach", "Cs Ta"],
+		  "Business Analyst": ["Solution Analyst", "System Integration Analyst", "Consulting Analyst", "Sales Marketing Analyst", "Business Analyst", "Business Development"],
+		  "Project Leader": ["Field Director", "Project Leader", "Project Coordinator"],
+		  "Summer Intern": ["Summer Assistant"],
+		  "Co-chair": ["Co chair"],
+		  "Section Leader": ["Section Leader"],
+		  "Residential Staff": ["Resident Consultant", "Resident Assistant", "Kitchen Manager", "Peer Academic Coordinator", "Community Manager"],
+		  "Founder": ["Founder", "Co-founder"],
+		  "Product Manager Intern": ["Product Manager Intern", "Technology Manager Intern"],
+		  "Software Developer Intern": ["It Intern", "Web Intern", "Develop Intern", "Programming Intern", "Software Intern"],
+		  "Software Developer": ["Coder", "Code Monkey", "Software Develop", "Back-end Engineer", "Web Develop", "Iphone Engineer", "Developer", "Software Engineer"],
+		  "Visiting Scholar": ["Visiting Scholar"],
+		  "Researcher": ["Research Associate", "Research Engineer"],
+		  "CTO": ["Cto"],
+		  "CEO": ["Ceo"],
+		  "Student": ["Candidate", "Student"]
+	  },
+	  tipHtml:"",
+	  overNode: false,
+	  MAX_COMS_TO_DISPLAY: 4,
+	  MAX_PREV_POSITIONS_TO_DISPLAY: 2
+	};
+	
+	
+	function count(obj) {
+		if (obj.__count__ !== undefined)
+			return obj.__count__;
+		var c = 0, p;
+		for (p in obj) {
+			if (obj.hasOwnProperty(p))  c += 1;
+		}
+		return c;
+	}
+	
+	$(document).mousemove(function(e){
+		if (MYAPP.overNode){
+		  $("#tip").css("left", e.clientX+20).css("top", e.clientY+20);
+		  $("#tip").html(tipHtml);
+		}
+	});
+	
+	function addTip(node, html){
+		$(node).mouseenter(function(){
+		   tipHtml = html;
+		   $("#tip").fadeIn();
+		   MYAPP.overNode = true;
+		}).mouseleave(function(){
+		   $("#tip").fadeOut();
+		   MYAPP.overNode = false;
+		});
+	}
+	
+	function onLinkedInLoad() {
+		IN.Event.on(IN, "auth", onLinkedInAuth);
+	}
+	  
+	function onLinkedInAuth() {
+		// loop through all profiles, storing Industry name into the select
+		IN.API.Connections("me")
+			.fields(["industry"])
+			.result(populateIndustries);
+	}
+	
+	// Stores every distinct Industry into MYAPP.industries
+	function populateIndustries(profiles) {
+	  var members = profiles.values;
+	  for (var member in members) {
+		var industry = members[member].industry;
+		if (MYAPP.industries[industry] === undefined) {
+		  // create a Positions dictionary for new Industry
+		  MYAPP.industries[industry] = {
+			  positions: {},
+			  promotions: [],
+			  graph: null
+		  };
+		}
+	  }
+	  var industries_obj_keys = [];
+	  for (var ind in MYAPP.industries) {
+		  industries_obj_keys.push(ind);
+	  }
+	  industries_obj_keys.sort();
+	  var industrySelect = document.selectForm.industrySelect;
+	  for (i in industries_obj_keys) {
+		var industry = industries_obj_keys[i];
+		industrySelect.options[industrySelect.options.length]=new Option(industry, industry);
+	  }
+	}
+	
+	function toTitleCase(str) {
+		return str.replace(/\w\S*/g, function(txt){return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();});
+	}
+	
+	// Entity Resolution and text processing
+	
+	function mapTitle(title) {
+	  title = title.replace('/', ' ');
+	  var title = toTitleCase(title);
+	  for (var key in MYAPP.titleMappings) {
+		var array = MYAPP.titleMappings[key];	// e.g. ["Intern Developer", "IT Intern"]
+		
+		for (var i in array) {	// e.g. "Intern Developer"
+		  var words = array[i].split(" ");		// ["Intern", "Developer"]
+		  var containsEveryWord = true;
+		  for (var j in words) {
+			  var word = words[j];
+			  if (title.search(word) === -1) {
+				  containsEveryWord = false;
+			  }
+		  }
+		  if (containsEveryWord)	return key;
+		}
+	  }
+	  return title;
+	};
+	
+	//  Store LinkedIn profile data for selected Industry into MYAPP object
+	//    stores a dictionary/array of tuples for all connecting edges (promotions)
+	  
+	function storeProfilesForIndustry(profiles)
+	{
+	  var members = profiles.values;
+	  for (var member in members) {
+		var industry = members[member].industry;
+		// only consider profiles of people in the Industry we want
+		if (industry === MYAPP.INDUSTRY) {
+		  var positions = members[member].positions.values;
+		  if (positions) {
+			var moreRecentPosition = "";
+			for (var i = 0; i < positions.length; i++)
+			{
+			  // Entity Resolution for job titles
+			  var title = mapTitle(positions[i].title);
+			  
+			  if (MYAPP.industries[industry].positions[title] === undefined) {
+				// create new Position object
+				MYAPP.industries[industry].positions[title] = {
+				    count: 0,
+					companies: {},
+					previous: {},		// counter of positions held directly before this pos
+					next: {},
+					coordWeights: []
+				}
+			  }
+			  
+			  MYAPP.industries[industry].positions[title].count++;
+			  
+			  // iteration 1:  calculate coordWeight based only on its rank in the positions the person has
+			  var weight = (positions.length-i)*1.0/(positions.length+1);
+			  MYAPP.industries[industry].positions[title].coordWeights.push(weight);
+			  
+			  var userCompany = positions[i].company;
+			  var storedCompanies = MYAPP.industries[industry].positions[title].companies;
+			  if (userCompany.name !== "") {
+				// append company (name, indust, jobCount)
+				if (!storedCompanies.hasOwnProperty(userCompany.name)) {
+				  
+				  // create new company entry
+				  MYAPP.industries[industry].positions[title].companies[userCompany.name] = [userCompany.industry, 1];
+				}
+				else {	  // company exists, add to count
+				  var count = storedCompanies[userCompany.name][1];
+				  MYAPP.industries[industry].positions[title].companies[userCompany.name] = [userCompany.industry, count+1];
+				}
+			  }
+			  // if there's an earlier position, add relationships
+			  if (moreRecentPosition !== "")
+			  {
+			    // add edge
+				MYAPP.industries[MYAPP.INDUSTRY].promotions.push([title, moreRecentPosition]);
+				
+				// add Previous and Next information
+				var prevPosCount = MYAPP.industries[industry].positions[moreRecentPosition].previous[title];
+				if (prevPosCount === undefined) {
+				  MYAPP.industries[industry].positions[moreRecentPosition].previous[title] = 1;
+				} else {
+				  MYAPP.industries[industry].positions[moreRecentPosition].previous[title] = prevPosCount+1;
+				}
+				
+				var nextPosCount = MYAPP.industries[industry].positions[title].next[moreRecentPosition];
+				if (nextPosCount === undefined) {
+				  MYAPP.industries[industry].positions[title].next[moreRecentPosition] = 1;
+				} else {
+				  MYAPP.industries[industry].positions[title].next[moreRecentPosition] = nextPosCount+1;
+				}
+			  }
+			  moreRecentPosition = title;
+			}
+		  }
+		}
+	  }
+	}
+	
+	// returns an array of node objects
+	function sortNodesByPositionSeniority(g)
+	{
+      var positions = MYAPP.industries[MYAPP.INDUSTRY].positions;
+	  for (var i in g.nodes) {
+	    var node = g.nodes[i];
+		var coordWeights = positions[node.id].coordWeights;
+		var sum = 0;
+		for (var i=0; i<coordWeights.length; i++) {
+		  sum += coordWeights[i];
+		}
+		node.layoutPosX = sum / coordWeights.length;	// average weighted x-coord
+	  }
+	  // sort nodes into an array
+	  var nodesSorted = [];
+	  for (var i in g.nodes) {
+	    var node = g.nodes[i];
+	    nodesSorted.push(node);
+	  }
+	  nodesSorted.sort(function(a, b) {
+	    return a.layoutPosX - b.layoutPosX});
+	  return nodesSorted;
+	}
+	
+	
+	function addCompanyTooltips()
+	{
+	  var ellipses = document.getElementsByTagName("ellipse");
+	  for (var i=0; i<ellipses.length; i++) {
+		var e = ellipses[i];
+		var title = e.id;
+		var total = MYAPP.industries[MYAPP.INDUSTRY].positions[title].count;
+		var html = "<h3>Top Companies Offering this Position</h3>";
+		var companies = MYAPP.industries[MYAPP.INDUSTRY].positions[title].companies;
+		
+		// sort companies and show top N
+		var companiesSorted = [];
+		for (var name in companies) {
+		  var comArray = companies[name];
+		  comArray.unshift(name);
+		  companiesSorted.push(comArray);
+		}
+		companiesSorted.sort(function(a, b) {
+		  return b[2] - a[2]});
+		for (var j in companiesSorted) {
+		  if (j >= MYAPP.MAX_COMS_TO_DISPLAY)  break;
+		  var comArray = companiesSorted[j];
+		  html += ("<p>Name: "+ comArray[0]+" ("+ comArray[2]+")");
+		  html += ("<br />Industry: "+ comArray[1] + "</p>");
+		}
+		
+		// most common Previous job positions
+		var prev = MYAPP.industries[MYAPP.INDUSTRY].positions[title].previous;
+		var prevSize = 0;
+		for (var pos in prev) {
+		  if (prev.hasOwnProperty(pos)) prevSize++;
+		}
+		if (prevSize > 0) {
+		  var prevSorted = [];
+		  for (var pos in prev) {
+			var posArray = [pos, prev[pos]];
+			prevSorted.push(posArray);
+		  }
+		  prevSorted.sort(function(a, b) {
+			return b[1] - a[1]});
+			
+		  html += "<h3>Getting to this Position</h3>";
+		  for (var j in prevSorted) {
+		    if (j >= MYAPP.MAX_PREV_POSITIONS_TO_DISPLAY)  break;
+		    var prevPos = prevSorted[j];
+		    var percent = prevPos[1]*100/total;
+			html += "<p>"+ percent.toFixed(1) + "% of people with this position held the position of <i>"+ prevPos[0];
+			html += "</i> directly prior"+"</p>";
+		  }
+		}
+		
+		// most common Next job positions
+		var next = MYAPP.industries[MYAPP.INDUSTRY].positions[title].next;
+		var nextSize = 0;
+		for (var pos in next) {
+		  if (next.hasOwnProperty(pos)) nextSize++;
+		}
+		if (nextSize > 0) {
+		  var nextSorted = [];
+		  for (var pos in next) {
+			var posArray = [pos, next[pos]];
+			nextSorted.push(posArray);
+		  }
+		  nextSorted.sort(function(a, b) {
+			return b[1] - a[1]});
+		  html += "<h3>Where to go From this Position</h3>";
+		  for (var j in nextSorted) {
+		    if (j >= MYAPP.MAX_PREV_POSITIONS_TO_DISPLAY)  break;
+		    var nextPos = nextSorted[j];
+		    var percent = nextPos[1]*100/total;
+			html += "<p>"+ percent.toFixed(1) + "% of people with this position went directly on to <i>"+ nextPos[0];
+			html += "</i></p>";
+		  }
+		}
+		
+		//log(html);
+		addTip(e, html);
+	  }
+	}
+	
+	// Draw a graph specific to this industry, if it hasn't been drawn already
+
+	function drawGraph(profiles)
+	{
+	  // clear existing canvas
+	  document.getElementById("canvas").innerHTML = null;
+
+	  var industryGraph = MYAPP.industries[MYAPP.INDUSTRY].graph;
+	  if (industryGraph == null) {
+		var headerHeight = document.getElementsByTagName("h1")[0].offsetHeight + document.selectForm.offsetHeight + 2*document.getElementById("industrySelect").offsetHeight;
+		var width = $(document).width();
+		var height = $(document).height() - headerHeight;
+		var g = new Graph();
+		g.edgeFactory.template.style.directed = true;
+		
+		if (count(MYAPP.industries[MYAPP.INDUSTRY].positions) === 0) {
+			storeProfilesForIndustry(profiles, MYAPP.INDUSTRY);
+		}
+		
+		// iterate through Industries and draw Nodes and Edges
+		var positions = MYAPP.industries[MYAPP.INDUSTRY].positions;
+		for (var title in positions) {
+			g.addNode(title);
+		}
+		var edges = MYAPP.industries[MYAPP.INDUSTRY].promotions;
+		for (var edge in edges)
+			g.addEdge(edges[edge][0], edges[edge][1], { stroke:"grey", opacity: 0.6});
+
+		MYAPP.industries[MYAPP.INDUSTRY].graph = g;
+		
+		//var layouter = new Graph.Layout.Spring(g);
+		var layouter = new Graph.Layout.Ordered(g, sortNodesByPositionSeniority(g));
+		var renderer = new Graph.Renderer.Raphael('canvas', g, width, height);
+		
+		addCompanyTooltips();
+	  }
+	  else {
+		// retrieve stored graph
+		var renderer = new Graph.Renderer.Raphael('canvas', industryGraph, width, height);
+	  }
+	}
+	
+	function handleChoseIndustry(dd)
+	{
+		MYAPP.INDUSTRY = dd[dd.selectedIndex].text;
+		IN.API.Connections("me")
+			.fields(["id", "firstName", "lastName", "industry", "positions", "educations"])
+			.result(drawGraph);
+	}
+	
+	</script>
+	<script type="text/javascript" src="http://platform.linkedin.com/in.js">
+	  api_key: h1qNhawi6bVjZGJUBrCjBfsCyTmWRQauR-KFzFr0khCD-HCor5hxuROPShLkJhb7
+	  onLoad: onLinkedInLoad
+	  authorize: true
+	</script>
+	
+  </head>
+  <body>
+	<img src="climber-sign.png" alt="Climber"><h1>CareerCarabiner</h1>
+	<p id="form">
+	<form name="selectForm" id="selectForm" action="">
+		<select id="industrySelect" onChange="handleChoseIndustry(this);">
+			<option>Select Industry...</option>
+		</select>
+	</form>
+	<script type="IN/Login"></script>
+	<div id="tip"></div>
+	<div id="canvas"></div>
+	<p class="copyright">&copy; Letitia Lew, 2011</p>
+  </body>
+</html>
+
+

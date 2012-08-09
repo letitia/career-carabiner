@@ -1,0 +1,193 @@
+<html>
+	<head>
+		<title>Career Jungle 1.0</title>
+	    <script type="text/javascript" src="js/raphael-min.js"></script>
+	    <script type="text/javascript" src="js/dracula_graffle.js"></script>
+    	<script type="text/javascript" src="js/jquery-1.4.2.min.js"></script>
+    	<script type="text/javascript" src="js/dracula_graph.js"></script>
+    	<script type="text/javascript" src="js/dracula_algorithms.js"></script>
+		
+		<script type="text/javascript">
+		var MYAPP = {};
+		var INDUSTRY = "";		// TODO: pass this as local variable
+		
+		
+		  var titleMappings = {
+		  	"Spring Analyst": "Analyst Intern",
+		  	"Summer Analyst": "Analyst Intern",
+		  	"Research Intern": "Research Intern",
+		  	"Tutor": "Teacher",
+		  	"Teacher": "Teacher",
+		  	"Teaching": "Teacher",
+		  	"Counselor": "Teacher",
+		  	//"Engineering Intern": "Engineering Intern",
+		  	"Systems": "Business Analyst",
+		  	"Solutions": "Business Analyst",
+		  	"Consulting Analyst": "Business Analyst",
+		  	"Field Director": "Project Coordinator",
+		  	"Sales & Marketing Analyst": "Business Analyst",
+		  	"Business Technology Analyst": "Business Analyst",
+		  	"Business Development": "Business Analyst",
+		  	"Consultant Intern": "Analyst Intern",
+		  	"Summer Assistant": "Summer Intern",
+		  	"Co chair": "Co-chair",
+		  	"Section Leader": "Section Leader"
+		  	/*"Candidate": "Student"
+		  	
+		  	"Candidate": "REMOVE"*/
+		  };
+		  
+		  //TODO:  Replace individual words e.g. "Electrical" = "Electric", case-sensitivity??
+		  // Coder = Code Monkey = Programmer = Software Engineer
+		  // "Intern, Database Developer" = "Programming Intern" = "Software Development Intern" = Software Intern = Development engineering intern = "Software Engineering Intern"
+		  // Web Intern = Web Intern
+		  
+
+		  function onLinkedInLoad() {
+			 IN.Event.on(IN, "auth", onLinkedInAuth);
+		  }
+		  
+		  function onLinkedInAuth() {
+		  }
+		  /*
+		  // dynamically populate the Industries
+		  function populateIndustrySelect() {
+		  	var select = document.getElementById("industrySelect");
+		  	console.log(select.length);
+		  	for (var industry in MYAPP) {
+		  		console.log("Adding " + industry+"\n");
+		  		select.add(industry);
+		  	}
+		  }*/
+		  
+		  // Store LinkedIn profile data into MYAPP object
+		  // note:  might need to store a dictionary/array of tuples for all connecting edges and call all addNode() and addEdge() after this function returns.  In order to render tooltips before creating node image with addNode()
+		  
+		  function storeProfilesForIndustry(profiles)
+		  {
+		  	var members = profiles.values;
+			for (var member in members) {
+			    var industry = members[member].industry;
+			    // only consider profiles of people in the Industry we want
+				if (industry === INDUSTRY) {
+					var positions = members[member].positions.values;
+					if (positions) {
+						for (var i = 0; i < positions.length; i++)
+						{
+							// Entity Resolution for job titles:  MAKE THIS MORE SOPHISTICATED!#!!@!!
+							var mapTitle = function(title) {
+								for (var key in titleMappings) {
+									if (title.search(key) !== -1) {
+										return titleMappings[key];
+									}
+								}
+								return title;
+							};
+							var title = positions[i].title;
+							title = mapTitle(title);
+							
+							// check if this Position exists in this industry
+							if (MYAPP[industry].positions[title] === undefined) {
+								// create new Companies array for new Position
+								MYAPP[industry].positions[title] = [];
+							}
+							
+							//TODO:  add Educations too
+							var userCompany = positions[i].company;
+							if (userCompany["name"] || userCompany["industry"])
+							{
+								// append tuple of company name, industry
+								MYAPP[industry].positions[title].push([userCompany["name"], userCompany["industry"]]);
+							}
+							// check if there's another position after this one
+							if (i < positions.length-1) {
+								var titleOfPreviousPos = mapTitle(positions[i+1].title);
+								MYAPP[INDUSTRY].promotions.push([titleOfPreviousPos, title]);
+							}
+						}
+					}
+				}
+			}
+		  }
+		  
+		  // Draw a graph specific to this industry
+		  
+		  function drawGraph(profiles)
+		  {
+		    var formHeight = document.getElementById("selectForm").offsetHeight + 2*document.getElementById("industrySelect").offsetHeight;
+		    var width = $(document).width();
+		  	var height = $(document).height() - formHeight;
+    		var g = new Graph();
+    		g.edgeFactory.template.style.directed = true;
+			
+			if (MYAPP[INDUSTRY] === undefined) {
+				// create a Positions dictionary for new Industry
+				MYAPP[INDUSTRY] = {
+					positions: {},
+					promotions: []
+				};
+				storeProfilesForIndustry(profiles);
+			}
+			
+			// iterate through MYAPP[INDUSTRY] and draw Nodes and Edges
+			var positions = MYAPP[INDUSTRY].positions;
+			for (var title in positions) {
+				g.addNode(title);
+			}
+			
+			var edges = MYAPP[INDUSTRY].promotions;
+			for (var edge in edges) {
+				
+				g.addEdge(edges[edge][0], edges[edge][1]);
+			}
+			
+			
+			var layouter = new Graph.Layout.Spring(g); // label nodes by id# and sort  Graph.Layout.Ordered(g, topological_sort(g));
+		    var renderer = new Graph.Renderer.Raphael('canvas', g, width, height);
+		  }
+			
+			function handleChoseIndustry(dd)
+			{
+				INDUSTRY = dd[dd.selectedIndex].text;
+				IN.API.Connections("me")
+			 		.fields(["id", "firstName", "lastName", "industry", "positions", "educations"])
+		    	.result(drawGraph);
+			}
+		
+		</script>
+		<script type="text/javascript" src="http://platform.linkedin.com/in.js">
+		  api_key: h1qNhawi6bVjZGJUBrCjBfsCyTmWRQauR-KFzFr0khCD-HCor5hxuROPShLkJhb7
+		  onLoad: onLinkedInLoad
+		  authorize: true
+		</script>
+		<style type="text/css">
+			body {
+				overflow: hidden;
+			}
+
+		</style>
+		
+	</head>
+	<body>
+		<script type="IN/Login"></script>
+			<p id="form">
+				<form name="selectForm" id="selectForm">
+					<select id="industrySelect" onChange="handleChoseIndustry(this);">
+						<option>Select Industry...</option>
+						<option>Renewables & Environment</option>
+						<option>Computer Software</option>
+						<option>Management Consulting</option>
+						<option>Research</option>
+						<option>Automotive</option>
+						<option>Design</option>
+						<option>Medical Practice</option>
+					</select>
+				</form>
+			</p>
+			<div id="canvas">
+			</div>
+			
+	</body>
+</html>
+
+
